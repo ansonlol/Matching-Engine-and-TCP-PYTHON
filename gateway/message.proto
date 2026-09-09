@@ -1,0 +1,76 @@
+syntax = "proto3";
+
+enum MessageType
+{
+    MESSAGE_TYPE_UNSPECIFIED = 0;  // reserved default
+    ADD_ORDER = 1;
+    CANCEL_ORDER = 2;
+    MODIFY_ORDER = 3;
+    ORDER_ACCEPT = 4;
+    ORDER_REJECT = 5;
+    TRADES = 6;
+}
+
+enum Side
+{
+    SIDE_UNSPECIFIED = 0;
+    BUY = 1;
+    SELL = 2;
+}
+
+enum OrderType
+{
+    ORDER_TYPE_UNSPECIFIED = 0;
+    GTC = 1;
+    FAK = 2;
+    FOK = 3;
+    MARKET = 4;
+    GFD = 5;
+}
+// for client
+message AddOrder 
+{   
+    int64 client_order_id = 1;
+    Side side = 2;
+    OrderType order_type = 3;
+    int64 price = 4;
+    int64 quantity = 5;
+}
+
+message CancelOrder
+{
+    int64 order_id = 1;
+}
+
+message ModifyOrder 
+{
+    int64 order_id = 1;
+    Side side = 2;
+    int64 price = 3;
+    int64 quantity = 4;
+}
+
+// for server
+message OrderAccept 
+{
+    int64 order_id = 1;
+}
+
+message OrderReject 
+{
+    int64 order_id = 1;
+    string reason = 2;
+}
+
+message Trade 
+{
+    int64 bid_order_id = 1;
+    int64 ask_order_id = 2;
+    int64 price = 3;
+    int64 quantity = 4;
+}
+
+message Trades 
+{
+    repeated Trade trades = 1;
+}

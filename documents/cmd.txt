@@ -1,0 +1,28 @@
+how to run protobuf
+
+protoc --python_out=. your_file.proto
+
+
+# make packages importable
+export PYTHONPATH=.
+
+python -m gateway.tcp_server 9999
+    python -m gateway.smoke_gateway 9999
+
+python -m tests.test_multi 9999
+
+git
+git init
+git status
+git add .
+git commit -m "Initial matching engine and TCP gateway"
+git branch -M main
+git remote add origin <your-repo-url>
+git push -u origin main
+Then:
+Bashgit checkout -b feature/readme
+# edit README
+git add README.md
+git commit -m "Add project README"
+git push -u origin feature/readme
+# open a PR on GitHub and merge

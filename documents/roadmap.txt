@@ -1,0 +1,59 @@
+Phase 1 — Core book (you are here)
+  ✓ Order / Trade / OrderBook
+  ✓ GTC, FAK, match, cancel, modify
+  → Add FOK, Market
+  → Tests
+
+Phase 2 — GFD + simple concurrency (trading_1 style)
+  → threading.Lock around book API
+  → background thread or scheduled prune for GOOD_FOR_DAY
+  → learn: mutex, thread safety, “don’t hold lock while doing I/O”
+
+Phase 3 — Networking (trading_1 + your socket/protobuf work)
+  → TCP order gateway (clients send orders)
+  → TCP or UDP-style market data out (even if UDP is “fake” on localhost)
+  → length-prefix + protobuf (you already practiced this)
+
+Phase 4 — Pipeline / trading_2 architecture (learning focus)
+  → Network thread produces events
+  → SPSC queue into matching thread
+  → Matching thread is the only writer to the book
+  → Optional: shared “top of book” snapshot for readers
+
+  trading_python/
+├── README.md
+├── pyproject.toml / requirements.txt
+│
+├── engine/                      # pure matching (no clock, no network)
+│   ├── __init__.py
+│   ├── types.py                 # OrderType, Side, Price, Quantity, OrderId
+│   ├── order.py                 # Order, OrderModify
+│   ├── trade.py                 # Trade, TradeInfo
+│   ├── levels.py                # LevelInfo, OrderbookLevelInfos
+│   └── orderbook.py             # OrderBook only
+│
+├── services/                    # application layer around the engine
+│   ├── __init__.py
+│   ├── order_service.py         # thin API: add/cancel/modify + notifies fairy
+│   └── cancel_fairy.py          # GFD / session cancels
+│
+├── gateway/                     # later: TCP / protobuf
+│   ├── __init__.py
+│   └── tcp_server.py
+│
+├── apps/                        # runnable entrypoints
+│   ├── run_demo.py
+│   └── run_server.py            # later
+│
+└── tests/
+    ├── test_orderbook.py
+    ├── test_market.py
+    └── test_cancel_fairy.py
+
+
+
+    gateway/
+  commands.py        # Command / Reply dataclasses put on queues
+  matcher.py         # matching thread: get Command → OrderService → Reply
+  connection.py      # optional: per-client socket + client_id
+  tcp_server.py      # REWRITE/extend: accept many clients, readers, start matcher

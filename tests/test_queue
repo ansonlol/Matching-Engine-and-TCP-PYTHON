@@ -1,0 +1,29 @@
+import queue
+from gateway.commands import Command, Reply
+from gateway.matcher import Matcher
+import gateway.message_pb2 as message_pb2
+
+def test_matcher_add_accept():
+
+    in_q, out_q = queue.Queue(), queue.Queue()
+    m = Matcher(in_q, out_q)
+    m.start()
+
+    add = message_pb2.AddOrder(
+        client_order_id = 1,
+        side = message_pb2.BUY,
+        order_type = message_pb2.GTC,
+        price = 100,
+        quantity = 5,
+    )
+
+    in_q.put(Command(1, message_pb2.ADD_ORDER, add.SerializeToString()))
+
+    reply = out_q.get(timeout=2)
+
+    assert reply.message_type == message_pb2.ORDER_ACCEPT
+
+    m.stop()
+    print("match ok")
+
+test_matcher_add_accept()
