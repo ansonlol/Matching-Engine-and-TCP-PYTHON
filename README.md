@@ -3,6 +3,7 @@
 
 A multi-process, exchange-style learning system: limit order book, TCP order-entry gateway, market-data fan-out, and a pre-trade risk service. Messages use length-prefixed Protobuf framing.
 
+'''
 ## Architecture
 
 Traders (smoke / multi-client)
@@ -32,7 +33,7 @@ Traders (smoke / multi-client)
 | Gateway | 9999 | Client sessions; orchestrates risk → engine → MD |
 
 Clients never touch the book. The gateway is the only process that dials engine, risk, and MD.
-
+'''
 ## Features
 
 - Order types: GTC, FAK, FOK, Market, GFD  
