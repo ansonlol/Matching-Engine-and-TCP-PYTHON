@@ -1,15 +1,10 @@
-Your old README still describes the **single-process matcher**. Here’s an updated version that matches what you built.
 
-```markdown
 # Python Matching Engine, Gateway, Market Data & Risk
 
 A multi-process, exchange-style learning system: limit order book, TCP order-entry gateway, market-data fan-out, and a pre-trade risk service. Messages use length-prefixed Protobuf framing.
 
-This is a teaching / Career Kickstarter–style project, **not** a production HFT stack.
-
 ## Architecture
 
-```text
 Traders (smoke / multi-client)
     │  TCP :9999  (ADD / CANCEL / MODIFY → ACCEPT / REJECT / TRADES)
     ▼
@@ -28,7 +23,6 @@ Traders (smoke / multi-client)
         │ on TRADES / TOP_OF_BOOK
         ▼
    Market data :10001  →  subscribers (snapshot + live)
-```
 
 | Process | Port (example) | Role |
 |---------|----------------|------|
@@ -52,14 +46,13 @@ Clients never touch the book. The gateway is the only process that dials engine,
 
 ## Project layout
 
-```text
 engine/           OrderBook, Order, Trade, levels, types
 services/         OrderService, CancelFairy
 gateway/          gateway_server, engine client, codec, message.proto, queues/SPSC
 marketdata/       md_server, md_client, subscriber, md_message.proto
 risk_service/     risk_server, risk_client, risk_service, risk_message.proto
 tests/            smoke_gateway, test_multi, unit tests
-```
+
 
 ## Requirements
 
@@ -67,18 +60,15 @@ tests/            smoke_gateway, test_multi, unit tests
 - `protobuf`, `sortedcontainers`  
 - `protoc` matching your `protobuf` major version  
 
-```bash
 pip install protobuf sortedcontainers
 export PYTHONPATH=.
-```
+
 
 ### Regenerate stubs (when `.proto` changes)
 
-```bash
 cd gateway && protoc --python_out=. message.proto && cd ..
 cd marketdata && protoc --python_out=. md_message.proto && cd ..
 cd risk_service && protoc --python_out=. risk_message.proto && cd ..
-```
 
 Use **unique enum value names** across protos (e.g. `RISK_BUY` vs gateway `BUY`) to avoid descriptor-pool clashes.
 
@@ -86,7 +76,6 @@ Use **unique enum value names** across protos (e.g. `RISK_BUY` vs gateway `BUY`)
 
 From project root, **four servers** then clients:
 
-```bash
 # Terminal 1 – engine (restart for a clean book)
 python -m gateway.matching_engine_server 10000
 
@@ -104,7 +93,6 @@ python -m tests.smoke_gateway 9999
 
 # Optional – MD listener
 python -m marketdata.subscriber
-```
 
 **Note:** The engine keeps one in-memory book for its lifetime. Restart the **engine** between integration runs if resting orders would affect results.
 
@@ -112,9 +100,7 @@ python -m marketdata.subscriber
 
 Framing (network byte order):
 
-```text
 [4 bytes length][4 bytes message type][N bytes protobuf payload]
-```
 
 `length` = size of type field + payload (see `gateway/codec.py`).
 
@@ -159,20 +145,5 @@ Risk uses a separate proto (`RiskMessageType`, `RiskSide`, …) on port 10002.
 
 ## Quick mental model
 
-```text
 Order path:  Client → Gateway → Risk → Engine → Gateway → Client
 Public MD:   Engine → Gateway → MD → Subscribers
-```
-```
-
----
-
-### What changed vs your draft
-
-- Multi-process diagram (engine / MD / risk / gateway)  
-- Correct start commands and ports  
-- Risk + MD features and proto regen notes  
-- Removed outdated “only `tcp_server` + in-process matcher” as the main story  
-- Limitations/future work aligned with what you actually built  
-
-Paste into `README.md` and adjust module paths if your package names differ slightly (`risk_service` vs `risk`).
