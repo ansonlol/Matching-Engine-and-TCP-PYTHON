@@ -236,3 +236,17 @@ class OrderBook:
     #9 helper function for order service
     def get_order(self, order_id:OrderId):
         return self._orders.get(order_id)
+
+    #10 for market data braodcast
+    def top_of_book(self) -> tuple[int, int, int, int]:
+        if self._bids:
+            bid_price, orders = self._bids.peekitem(0)
+            bid_qty = sum(o.remaining_quantity for o in orders)
+        else:
+            bid_qty, bid_price = 0, 0
+        if self._asks:
+            ask_price, orders = self._asks.peekitem(0)
+            ask_qty = sum(o.remaining_quantity for o in orders)
+        else:
+            ask_price, ask_qty = 0, 0
+        return (bid_price, bid_qty, ask_price, ask_qty)

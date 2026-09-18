@@ -1,107 +1,178 @@
-# Title
-# Python Matching Engine & Multi-Client TCP Gateway
-A object-oriented limit order book with a TCP + Protobuf order-entry gateway. Multiple clients can submit orders over the network; a single matcher thread applies them to a shared book through an application service layer.
+Your old README still describes the **single-process matcher**. Here’s an updated version that matches what you built.
 
-This project models exchange-style architecture (gateway → service → engine). It is not a production HFT system.
+```markdown
+# Python Matching Engine, Gateway, Market Data & Risk
 
-## Features
+A multi-process, exchange-style learning system: limit order book, TCP order-entry gateway, market-data fan-out, and a pre-trade risk service. Messages use length-prefixed Protobuf framing.
 
-- Order types: GTC, FAK, FOK, Market, GFD
-- Price–time priority matching
-- Add, cancel, and modify
-- Book depth snapshot (`get_order_infos`)
-- TCP order entry with length-prefixed Protobuf framing
-- Multi-client support via inbound/outbound queues and one matcher thread
-- Application layer: `OrderService` + `CancelFairy` (GFD / session-style cancels)
+This is a teaching / Career Kickstarter–style project, **not** a production HFT stack.
 
 ## Architecture
 
-Client(s)
-    │  TCP + Protobuf (framed)
+```text
+Traders (smoke / multi-client)
+    │  TCP :9999  (ADD / CANCEL / MODIFY → ACCEPT / REJECT / TRADES)
     ▼
-Gateway (tcp_server)
-    │  Command queue
-    ▼
-Matcher  ──only writer──►  OrderService  ──►  OrderBook
-    │                           │
-    │                           └── CancelFairy (GFD)
-    ▼
-Reply queue ──► Gateway writer ──► Client(s)
+┌─────────────────────────────┐
+│ Gateway                     │
+│  readers → queue → worker   │
+│  worker → writer (SPSC out) │
+└───────┬───────────┬─────────┘
+        │           │
+        │ Risk      │ Engine
+        │ :10002    │ :10000
+        ▼           ▼
+   Risk service   Matching engine
+   (check/fill)   (OrderService → OrderBook)
+        │
+        │ on TRADES / TOP_OF_BOOK
+        ▼
+   Market data :10001  →  subscribers (snapshot + live)
+```
 
-engine/ — matching core (OrderBook, Order, Trade, levels, types)
-services/ — OrderService (facade), CancelFairy (GFD policy outside the book)
-gateway/ — codec, Protobuf, commands, matcher, TCP server, smoke client
+| Process | Port (example) | Role |
+|---------|----------------|------|
+| Matching engine | 10000 | Only writer to the book |
+| Market data | 10001 | Trade + top-of-book fan-out; late-join snapshot |
+| Risk | 10002 | Pre-trade checks; apply fills |
+| Gateway | 9999 | Client sessions; orchestrates risk → engine → MD |
 
-Clients never touch the book directly. Only the matcher thread calls OrderService.
+Clients never touch the book. The gateway is the only process that dials engine, risk, and MD.
 
-# Project layout
-engine/          Order book and domain types
-services/        OrderService, CancelFairy
-gateway/         TCP server, matcher, codec, message.proto
-tests/           Unit and multi-client integration tests
-documents/       Notes and reference material
+## Features
 
-# Requirements
+- Order types: GTC, FAK, FOK, Market, GFD  
+- Price–time priority matching; add / cancel / modify  
+- Multi-client gateway (thread-per-client readers, one engine worker)  
+- Length-prefixed Protobuf framing (shared `codec`)  
+- GFD via `CancelFairy` outside the book  
+- Market data: live `TRADES`, `TOP_OF_BOOK`, last-trade snapshot + seq  
+- Risk: max order size, max \|position\|, invalid price/qty (defaults: account `default`, symbol `tsla`)  
+- Optional SPSC ring for worker → writer outbound path  
 
-Python 3.10+ (3.11+ recommended)
-protobuf (runtime + protoc to regenerate stubs)
-sortedcontainers
+## Project layout
 
-# Example:
+```text
+engine/           OrderBook, Order, Trade, levels, types
+services/         OrderService, CancelFairy
+gateway/          gateway_server, engine client, codec, message.proto, queues/SPSC
+marketdata/       md_server, md_client, subscriber, md_message.proto
+risk_service/     risk_server, risk_client, risk_service, risk_message.proto
+tests/            smoke_gateway, test_multi, unit tests
+```
+
+## Requirements
+
+- Python 3.10+  
+- `protobuf`, `sortedcontainers`  
+- `protoc` matching your `protobuf` major version  
+
+```bash
 pip install protobuf sortedcontainers
-Run all commands from the project root.
 export PYTHONPATH=.
+```
 
-Generate Protobuf (when .proto changes)
-cd gateway
-protoc --python_out=. message.proto
-cd ..
+### Regenerate stubs (when `.proto` changes)
 
-Start the server
-python -m gateway.tcp_server 9999
+```bash
+cd gateway && protoc --python_out=. message.proto && cd ..
+cd marketdata && protoc --python_out=. md_message.proto && cd ..
+cd risk_service && protoc --python_out=. risk_message.proto && cd ..
+```
 
-Smoke tests (single client, many scenarios)
-other terminal; server must be running
-python -m gateway.smoke_gateway 9999
+Use **unique enum value names** across protos (e.g. `RISK_BUY` vs gateway `BUY`) to avoid descriptor-pool clashes.
 
-Multi-client match test
-server must be running on a fresh process for a clean book
-python -m tests.test_multi 9999
+## Running
 
-Note: The server keeps one in-memory book for its lifetime. Restart the server before integration tests if previous runs left resting orders.
+From project root, **four servers** then clients:
 
-Protocol
+```bash
+# Terminal 1 – engine (restart for a clean book)
+python -m gateway.matching_engine_server 10000
+
+# Terminal 2 – market data
+python -m marketdata.md_server 10001
+
+# Terminal 3 – risk
+python -m risk_service.risk_server 10002
+
+# Terminal 4 – gateway
+python -m gateway.gateway_server 9999 10000 10001 10002
+
+# Terminal 5 – smoke (order path + risk oversize case if added)
+python -m tests.smoke_gateway 9999
+
+# Optional – MD listener
+python -m marketdata.subscriber
+```
+
+**Note:** The engine keeps one in-memory book for its lifetime. Restart the **engine** between integration runs if resting orders would affect results.
+
+## Protocol (client ↔ gateway)
+
 Framing (network byte order):
-text[4 bytes length][4 bytes message type][N bytes protobuf payload]
-length covers the type field + payload (same convention as the project codec).
 
-# Design decisions
+```text
+[4 bytes length][4 bytes message type][N bytes protobuf payload]
+```
 
-Single matcher thread — the book has one writer; network threads only enqueue/dequeue
-queue.Queue — practical MPSC handoff in Python; in C++ HFT this maps to SPSC/lock-free rings
-GFD via CancelFairy — time/session policy stays outside the matching engine
-FOK — full-fill check against opposite-side liquidity before any partial trades
-Market — sweep available liquidity; residual does not rest (Option B)
-Service facade — gateway talks to OrderService, not OrderBook, so policy and matching stay separable
+`length` = size of type field + payload (see `gateway/codec.py`).
 
-# Testing
+Main client types: `ADD_ORDER`, `CANCEL_ORDER`, `MODIFY_ORDER`, `ORDER_ACCEPT`, `ORDER_REJECT`, `TRADES`.  
+Engine may also emit `TOP_OF_BOOK` (gateway forwards to MD, not necessarily to traders).
 
-tests/test.py (or unit tests under tests/)Engine / service behavior without TCPgateway/smoke_gateway.
-Single-client TCP: match, cancel, FOK reject, modifytests/test_multi.pyTwo TCP clients; cross-connection match
-Prefer a restarted server before smoke and multi-client runs so results are deterministic.
+Risk uses a separate proto (`RiskMessageType`, `RiskSide`, …) on port 10002.
 
-# Limitations
+## Design decisions
 
-Not latency-oriented HFT (Python, locks/queues, no kernel bypass)
-No persistence, replication, or recovery
-No authentication or per-client authorization
-No full market-data bus (trades returned to the active client)
-In-memory state only; process restart clears the book
+- **Separate processes** for engine, gateway, MD, risk — practice service boundaries and framing  
+- **Single writer** to the book (engine process / one logical matcher)  
+- **Gateway worker** serializes all engine and risk RPCs (no interleaved request/response on one socket)  
+- **Risk before engine** on ADD/MODIFY; rejects never hit the book  
+- **MD is public tape**: trades + top-of-book; snapshot on subscribe for late joiners  
+- **GFD** handled by `CancelFairy`, not inside match logic  
+- **Python queues / SPSC ring** illustrate MPSC and SPSC shapes; not latency-competitive with C++ HFT  
 
-# Future work
+## Testing
 
-END_SESSION (or admin) message wired to OrderService.end_session()
-Market-data broadcast to all subscribers
-Stronger reject codes (duplicate id, FOK, unknown order, etc.)
-Subprocess-started server inside integration tests
-Optional per-connection order ownership checks
+| Test | What it covers |
+|------|----------------|
+| Unit tests under `tests/` | Book / service without TCP |
+| `tests/smoke_gateway.py` | Single client: match, cancel, FOK, modify, risk max size |
+| `tests/test_multi.py` | Two clients, cross match |
+| `marketdata.subscriber` | Live top/trades + late snapshot |
+
+## Limitations
+
+- Not latency-oriented (Python, threads, no kernel bypass)  
+- No persistence, auth, or multi-symbol routing on the wire (risk uses defaults)  
+- In-memory only; restart clears engine and risk state  
+- Top-of-book / trades MD is simplified (no full L2 incremental depth yet)  
+
+## Future work
+
+- LevelUpdate stream from engine  
+- Account/symbol on client `AddOrder` into risk  
+- `END_SESSION` → `OrderService.end_session()`  
+- Subprocess-started servers in CI tests  
+- Stronger reject codes and metrics  
+
+## Quick mental model
+
+```text
+Order path:  Client → Gateway → Risk → Engine → Gateway → Client
+Public MD:   Engine → Gateway → MD → Subscribers
+```
+```
+
+---
+
+### What changed vs your draft
+
+- Multi-process diagram (engine / MD / risk / gateway)  
+- Correct start commands and ports  
+- Risk + MD features and proto regen notes  
+- Removed outdated “only `tcp_server` + in-process matcher” as the main story  
+- Limitations/future work aligned with what you actually built  
+
+Paste into `README.md` and adjust module paths if your package names differ slightly (`risk_service` vs `risk`).

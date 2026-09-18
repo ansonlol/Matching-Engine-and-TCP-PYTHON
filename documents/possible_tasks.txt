@@ -1,0 +1,34 @@
+Priority 2 – Evolve Your Project into Microservices (best preparation for Wed–Thu)
+Turn the current project into a larger system with 2–3 cooperating services. This is the closest simulation of the actual group project.
+Suggested target architecture:
+textClient(s)
+   │ TCP + Protobuf
+   ▼
+Order Gateway Service          ← already have most of this
+   │ TCP + Protobuf
+   ▼
+Matching Engine Service        ← extract the OrderBook + OrderService
+   │
+   ├──► Market Data Service    ← new (broadcasts trades / book snapshots)
+   └──► (optional) Risk / Position Service
+Concrete tasks (do in order):
+
+Extract the Matching Engine into its own process/service
+Make OrderService + OrderBook run as a standalone TCP server that only speaks Protobuf.
+The existing Gateway becomes a pure order-entry gateway that forwards commands to the Matching Engine service.
+
+Define clean Protobuf interfaces between services
+Keep the existing client-facing messages.
+Add internal messages (e.g. InternalAddOrder, InternalTrade, BookSnapshot, SubscribeMarketData).
+
+Add a simple Market Data Service
+Matching Engine publishes trades (and optionally book updates) to it.
+Clients (or a simple subscriber) can connect and receive broadcasts.
+This forces you to think about fan-out, subscriptions, and message framing again.
+
+Make services start independently
+Each service has its own main and can be launched with a port.
+Document the startup order and how they discover each other (hard-coded ports is fine for now).
+
+Add integration tests that start multiple services
+Start Matching Engine → start Gateway → start Market Data → run a multi-client scenario and assert trades appear on the market-data side.

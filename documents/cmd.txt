@@ -11,6 +11,13 @@ python -m gateway.tcp_server 9999
 
 python -m tests.test_multi 9999
 
+
+Terminal 1: matching_engine_server 10000
+Terminal 2: gateway_server 9999 10000 10001
+Terminal 3: smoke_gateway 9999
+Terminal 4: md_server 10001 
+Terminal 5: subscriber 10001
+
 git
 git init
 git status

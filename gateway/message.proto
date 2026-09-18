@@ -9,6 +9,7 @@ enum MessageType
     ORDER_ACCEPT = 4;
     ORDER_REJECT = 5;
     TRADES = 6;
+    TOP_OF_BOOK = 7;
 }
 
 enum Side
@@ -73,4 +74,11 @@ message Trade
 message Trades 
 {
     repeated Trade trades = 1;
+}
+
+message TopOfBook{
+    int32 bid_price = 1;
+    int32 bid_qty = 2;
+    int32 ask_price = 3;
+    int32 ask_qty = 4;
 }

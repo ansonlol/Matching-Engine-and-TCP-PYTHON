@@ -1,0 +1,234 @@
+Priority 1 – System Design Practice (for Tuesday)
+Spend focused time practicing how you would talk about design, not just code.
+Do these exercises (write them down or speak them out loud):
+
+Design a simple Order Entry → Matching Engine → Market Data system.
+
+For each component, answer:
+
+What is its responsibility?
+order entry allows clients to submit an order, either add, cancel or modify, can decide which order type inclding gtc fok fak market and etc, choose a quantity and the price, then send the order message through a tcp network to the server, also we use framing for the messages
+
+matching engine receive the order from the server, then it handles the matching orders, if there are crosses in the orderbook becuz of the new order we return a trade else it rests the order in the orderbook
+
+md system fan out the change in orderbook or trades after every events. use udp to fan out the market data to mutli clients 
+
+What is the interface (Protobuf messages)?
+order: AddOrder, CancelOrder, OrderAccept
+
+matching: internal add ? not sure. i think my project miss this
+
+md: level update, trades, snapshots
+
+What are the key trade-offs (latency vs throughput, consistency, complexity, single-threaded vs multi-threaded, in-memory vs persistent)?
+order: for latency tcp is slower the udp but it allows sending a message one to one from client to sever without dropping any packets, but udp may be unstable and drop some data during the fan out, when submitting order we need a end to end but for md we can use udp for faster data fan out so clients can make decisions faster. so md we use udp  matching: we use sigle threaded since we want only one orderbook and only one writer so that the data inside wont be misappropriated by clients or block by slow clients, 
+i think i miss a lot in this part, can you teach me more here 
+
+
+
+How would you test it?
+order: smoke multi clients submit order the same time 
+matching: unit test differyt types of orders and whether they rest or trade, can check size of the orderbook 
+md: send upd packets to different clients and see the message recive the same time ?
+
+How would you handle failures / restarts?
+idk
+
+How would you scale it later?
+order: add more gateways, such as risk service
+matching: idk, md: more data to span out, maybe get history of previous day
+
+-----------------------------ANSWER-----------------------------
+Your answers are a **good start**. Below: what’s already right, what to fix, and how to fill the gaps (especially trade-offs, failures, scale).
+
+---
+
+### Quick scorecard
+
+| Area | Your answer | Verdict |
+|------|-------------|---------|
+| Responsibilities | Mostly clear | Good — small fixes below |
+| Interfaces | Partial | Need cleaner split of **client** vs **internal** messages |
+| Trade-offs | TCP vs UDP + single writer | Right direction — expand with structure |
+| Testing | Reasonable | Good enough for Tuesday |
+| Failures | “idk” | **Learn this next** |
+| Scale | Partial | **Learn this next** |
+
+---
+
+## 1. Responsibilities (tighten)
+
+**Order Entry (Gateway)**  
+- Accept client connections  
+- Decode framed Protobuf  
+- Validate basic fields  
+- Forward to matcher (or risk first)  
+- Return **ack / reject / own fills** to **that** client  
+
+Not its job: full matching logic, fan-out to all traders.
+
+**Matching Engine**  
+- Own the book  
+- Match on cross; else rest  
+- Emit **trades** and optionally **book updates**  
+
+Not its job: TCP to every market-data user, long-term history.
+
+**Market Data**  
+- Subscribe clients  
+- Broadcast trades / top-of-book / snapshots  
+- Handle slow consumers  
+
+Not its job: accept orders.
+
+---
+
+## 2. Interfaces (Protobuf) — clearer picture
+
+**Client ↔ Order Entry**
+
+```text
+AddOrder, CancelOrder, ModifyOrder
+OrderAccept, OrderReject, Execution/Trade (for that client)
+```
+
+**Order Entry ↔ Matching Engine** (internal — you can name them)
+
+```text
+InternalAdd, InternalCancel, InternalModify
+InternalAccept, InternalReject, InternalTrades
+```
+
+Same ideas as client messages; may add `account_id`, `gateway_id`.  
+Your project merged OE + matcher in one process — that’s fine. In design, **pretend** they’re split.
+
+**Matching → MD**
+
+```text
+TradeUpdate (symbol, price, qty, time)
+LevelUpdate or BookSnapshot
+```
+
+**Client ↔ MD**
+
+```text
+Subscribe(symbol)
+TradeUpdate / Snapshot (stream)
+```
+
+---
+
+## 3. Trade-offs — how to talk about them
+
+Use a simple pattern every time:
+
+> Option A vs Option B → I choose X because Y for this system.
+
+### Order Entry
+
+| Topic | Options | Typical choice |
+|--------|---------|----------------|
+| TCP vs UDP | Reliable vs lossy | **TCP** for orders (must not lose cancels/acks) |
+| Threading | Thread per client vs async | Either; don’t block matcher on slow clients → **queue** |
+| Parse where | Gateway vs engine | Parse in gateway for early reject |
+
+### Matching Engine
+
+| Topic | Options | Typical choice |
+|--------|---------|----------------|
+| Writers | Many threads + locks vs **one thread** | **One writer** (your design) — simpler correctness |
+| Memory | In-memory vs DB each order | **In-memory** for speed; journal if you need restart |
+| Latency vs throughput | Ultra-low latency vs batching | Trading: low latency; still batch MD if needed |
+
+**Your single-thread point is correct.**  
+Add: “Slow MD clients must not block matching → matcher only publishes to a queue, MD service fans out.”
+
+### Market Data
+
+| Topic | Options | Typical choice |
+|--------|---------|----------------|
+| TCP vs UDP | Reliable vs fast multi-receiver | **UDP multicast** common for public MD; **TCP** for simplicity/recovery |
+| Snapshot vs only deltas | Bandwidth vs easy join | Snapshot on subscribe + deltas after |
+| Slow consumer | Buffer / drop / disconnect | Cap buffer; disconnect or drop with sequence gap |
+
+**Your TCP-for-orders / UDP-for-MD split is a classic good answer.**
+
+---
+
+## 4. Testing — your ideas are fine
+
+Strengthen slightly:
+
+| Component | Tests |
+|-----------|--------|
+| Order Entry | Framing, bad messages, accept/reject, one client disconnect |
+| Matcher | Unit: GTC/FOK/FAK/partial; deterministic book state |
+| MD | Two subscribers get same trade; late subscriber gets snapshot |
+| System | Multi-client: A sells, B buys, C on MD sees trade |
+
+---
+
+## 5. Failures / restarts (what you said you don’t know)
+
+Learn **these** patterns — enough for Tuesday:
+
+### Client disconnect (Order Entry)
+- Connection drops mid-order  
+- Gateway closes socket; optionally cancel “session orders” or leave GTC until client reconnects  
+- **Trade-off:** cancel-on-disconnect vs leave resting (depends on product)
+
+### Matcher crash
+- In-memory book **lost**  
+- **Mitigations:** write-ahead log (journal), snapshot + replay, or accept “restart empty” for a toy  
+- Gateways get errors / reconnect  
+
+### MD packet loss (UDP)
+- Client sees **sequence gap** → request **snapshot** over TCP  
+- Or use TCP MD only (simpler, slower scale)
+
+### Slow MD client
+- Don’t block matcher  
+- Drop or disconnect that client  
+
+### Duplicate orders
+- Client retries after timeout  
+- Need **idempotency** (client order id) so add isn’t applied twice  
+
+**One sentence you can reuse:**  
+> “Matcher stays in-memory for speed; on crash we lose state unless we add journaling. Orders use TCP so we don’t lose acks; MD can use UDP plus snapshots to recover from loss.”
+
+---
+
+## 6. Scale later
+
+| Component | How to scale |
+|-----------|----------------|
+| Order Entry | Run **many gateway** processes; load balance clients |
+| Matcher | **Shard by symbol** (AAPL book on core 1, TSLA on core 2) — one writer **per book** |
+| MD | Multicast; or dedicated MD cluster; separate network |
+| Risk | Scale reads; still careful on position updates |
+
+**Not:** “add risk service” as the main scale story for the matcher — risk is a **feature/path**, scaling matcher is **sharding / partitioning**.
+
+History/previous day → **storage service** or DB, not the live matcher hot path.
+
+---
+
+## 7. A strong 2-minute spoken answer (template)
+
+> Order entry terminates client TCP sessions and speaks Protobuf with framing. It forwards to a single-threaded matching engine so the book has one writer and stays consistent. Trades go back to the originating client and also to a market-data component that fans out to subscribers—often UDP for speed, with snapshots for recovery. We test the book with unit tests and the path with multi-client integration tests. On failure, we assume in-memory state is lost without a journal; clients reconnect and may resync. To scale, we add gateways and shard matchers by symbol.
+
+Memorize the **structure**, not every word.
+
+---
+
+## What you should do next
+
+1. Rewrite your notes using the tables above (especially **failures** + **scale**).  
+2. Speak the 2-minute template once without looking.  
+3. Repeat for **Risk** in the path: Gateway → Risk → Matcher → MD.
+
+---
+
+**Bottom line:**  
+You already understand the three boxes. Fill **failures** (disconnect, crash, UDP loss) and **scale** (many gateways, shard by symbol, MD fan-out). Keep TCP for orders, single writer for the book, UDP+snapshot optional for MD — that’s a solid Tuesday-level design.

@@ -1,0 +1,47 @@
+syntax = "proto3";
+
+enum RiskMessageType{
+    RISK_MESSAGE_TYPE_UNSPECIFIED = 0;
+    CHECK_ORDER = 1;
+    APPLY_FILL = 2;
+    RISK_DECISION = 3;
+    APPLY_FILL_ACK = 4;
+}
+
+enum RiskSide{
+    RISK_SIDE_UNSPECIFIED = 0;
+    RISK_BUY = 1;
+    RISK_SELL = 2;
+}
+// gateway to risk 
+
+message CheckOrder{
+    int64 order_id = 1;
+    string account_id = 2;
+    string symbol = 3;
+    RiskSide side = 4;
+    int64 price = 5;
+    int64 quantity = 6;
+    bool is_market = 7;
+}
+
+message ApplyFill{
+    int64 order_id = 1;
+    string account_id = 2;
+    string symbol = 3;
+    RiskSide side = 4;
+    int64 quantity = 5;
+}
+
+//risk to gateway
+
+message RiskDecision{
+    bool allow = 1;
+    string reason = 2;
+    int64 order_id = 3;
+}
+
+message ApplyFillAck{
+    bool ok = 1;
+    string reason = 2;
+}

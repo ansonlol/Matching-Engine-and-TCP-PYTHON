@@ -30,3 +30,9 @@ def read_message(sock) -> tuple[int, bytes] | None:
 
 def send_message(sock, message_type, protobuf_message):
     sock.sendall(encode_message(message_type, protobuf_message))
+
+def send_framed(sock, message_type, payload):
+    total_length = 4 + len(payload)
+    header = struct.pack("!II", total_length, message_type)
+    sock.sendall(header + payload)
+                

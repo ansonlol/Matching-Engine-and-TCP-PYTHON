@@ -1,0 +1,120 @@
+V1 is easy on purpose. **V2** should add **real risk concepts**, not just more `if` statements.
+
+Pick **2–3** of these — don’t do all.
+
+---
+
+### V2 upgrades (best learning order)
+
+### 1. **Open orders / reserved size** (most valuable)
+
+Problem with v1: you only update position on **fills**.  
+A resting **buy 4000** doesn’t change position, so another **buy 4000** might both pass checks and then both fill → over limit.
+
+**V2 idea:** track **reserved** quantity for open orders.
+
+```text
+position      = filled net
+reserved_buy  = size of open buy orders
+reserved_sell = size of open sell orders
+
+projected long  ≈ position + reserved_buy + new_buy
+projected short ≈ position - reserved_sell - new_sell
+```
+
+API:
+
+```text
+check_order(...)
+on_order_accepted(...)   # reserve
+on_order_cancelled(...)  # release reserve
+apply_fill(...)          # position += fill, reserve -= fill
+```
+
+This is how pre-trade risk gets closer to reality.
+
+---
+
+### 2. **Per-account and per-symbol limits**
+
+```text
+max_order_size by symbol
+max_position by account + symbol
+max_notional = qty * price  (e.g. reject if > 1_000_000)
+```
+
+Config as a small dict / dataclass instead of two globals.
+
+---
+
+### 3. **Fail modes + audit**
+
+```text
+check_order → Decision(allow, reason_code, details)
+```
+
+Reason codes: `INVALID_PRICE`, `MAX_QTY`, `MAX_POSITION`, `MAX_NOTIONAL`.
+
+Log every deny (list of events) — useful for “how do you debug risk?” in interviews.
+
+---
+
+### 4. **Wire into your gateway (integration v2)**
+
+```text
+ADD/MODIFY → risk.check → book
+trades → risk.apply_fill
+cancel → risk.release reserve
+```
+
+Extend Protobuf with `account_id` + `symbol` if needed.
+
+This turns a toy class into part of the **system**.
+
+---
+
+### 5. **Harder tests (force the design)**
+
+| Case | Why it hurts v1 |
+|------|------------------|
+| Two large resting buys both accepted | No reservation |
+| Partial fill then cancel rest | Reserve must shrink correctly |
+| Modify up in size | Re-check + change reserve |
+| Two accounts independent | Isolation |
+
+---
+
+### What not to do for “harder”
+
+- ML risk models  
+- Full margin/portfolio VaR  
+- Distributed risk with consensus  
+- Premature microservices split before reservations work  
+
+---
+
+### Suggested V2 plan
+
+```text
+Week goal:
+1. Add reserved size for open orders
+2. check / accept / cancel / fill lifecycle
+3. Tests for double-resting-order breach
+4. Optional: call from matcher
+```
+
+---
+
+### Minimal mental model for V2
+
+```text
+check:   would limits break including open orders?
+accept:  reserve qty
+fill:    position moves, reserve down
+cancel:  reserve down
+```
+
+---
+
+**Bottom line:** V2 = **open-order reservation + lifecycle**, not more constants.  
+That’s the step that makes risk actually protect the book. Start there.

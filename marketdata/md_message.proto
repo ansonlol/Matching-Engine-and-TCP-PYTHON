@@ -1,0 +1,9 @@
+syntax = "proto3";
+
+message LastTradeSnapshot {
+    int64 bid_order_id = 1;
+    int64 ask_order_id = 2;
+    int32 price = 3;
+    int32 quantity = 4;
+    int64 seq = 5;
+}

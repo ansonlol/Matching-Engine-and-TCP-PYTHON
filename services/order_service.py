@@ -48,4 +48,5 @@ class OrderService:
         #     return order_id in self._orders
         return self._book.has_order(order_id)
 
-    
+    def top_of_book(self) -> tuple[int, int, int, int]:
+        return self._book.top_of_book()

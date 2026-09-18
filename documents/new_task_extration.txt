@@ -1,0 +1,97 @@
+Target shape
+textClient(s)
+   │  TCP + Protobuf  (same client protocol as now)
+   ▼
+Order Gateway process          ← today’s tcp_server, slimmed down
+   │  TCP + Protobuf  (internal protocol)
+   ▼
+Matching Engine process        ← NEW: OrderService + OrderBook only
+
+
+clinet -> gateway tcp server -> engine_client -> matching_engine_server
+
+ProcessRoleGatewayAccept clients, frame messages, forward to engine, relay repliesEngineListen on its own port, run matcher/OrderService, no multi-client fan-in logic required (can be 1 connection from gateway first)
+Start simple: one gateway ↔ one engine connection. Multi-gateway later.
+
+Folders / files
+Keep packages; add an engine server under gateway/ or a new top-level service folder.
+Recommended layout:
+textengine/                 # unchanged domain (OrderBook, Order, ...)
+services/               # OrderService, CancelFairy (unchanged)
+
+gateway/
+  message.proto         # client-facing (keep)
+  message_pb2.py
+  codec.py              # shared framing (reuse)
+  commands.py           # optional; may simplify later
+  matcher.py            # today: in-process — will move logic to engine server
+  tcp_server.py         # becomes pure GATEWAY (change heavily)
+  smoke_gateway.py
+  ...
+
+  internal_messages.proto   # NEW — gateway ↔ engine (or reuse message.proto at first)
+  internal_pb2.py           # NEW generated
+  matching_engine_server.py # NEW — TCP server wrapping OrderService
+  engine_client.py          # NEW — gateway’s TCP client to engine
+Minimal path: reuse the same message.proto + codec for gateway↔engine at first so you don’t design two protocols on day 1.
+
+What each new/changed file does
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+FileActionmatching_engine_server.pyAdd. Bind port (e.g. 10000). Accept connection(s). read_message → call OrderService (same logic as today’s matcher handlers) → send accept/reject/tradesengine_client.pyAdd. connect(engine_host, engine_port), send_command, read_reply for the gatewaytcp_server.pyChange. Stop calling OrderService / in-process Matcher. On client ADD/CANCEL/MODIFY: forward bytes or parsed msg via engine_client; write engine replies back to the right clientmatcher.pyReuse logic inside matching_engine_server (import handlers) or merge handler code into engine server and delete in-process queue loop latercommands.py / queuesGateway may still use queues per client, but consumer forwards to engine instead of local OrderServiceengine/, services/No redesign — engine server imports them
+
+Phased implementation (do in order)
+Phase A — Engine process alone
+
+Add matching_engine_server.py
+Copy/adapt matcher’s _handle_add/cancel/modify to run after read_message
+Run: python -m gateway.matching_engine_server 10000
+Test with a tiny script that connects as a fake gateway and sends one AddOrder
+
+Phase B — Gateway talks to engine
+
+Add engine_client.py
+In tcp_server.py: on startup connect to 127.0.0.1:10000
+Client message → engine_client.send → read engine replies → send to client
+Remove in-process Matcher + OrderService from gateway process
+
+Phase C — Smoke
+Bash# terminal 1
+python -m gateway.matching_engine_server 10000
+
+# terminal 2
+python -m gateway.tcp_server 9999   # gateway; connects to 10000
+
+# terminal 3
+python -m gateway.smoke_gateway 9999

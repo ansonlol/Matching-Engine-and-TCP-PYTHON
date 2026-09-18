@@ -13,6 +13,6 @@ class Reply:
     # one outbound message from server frammed back to client
     client_id : int
     message_type : int # order accept reject trades
-    proto_msg : Any 
+    payload : bytes 
 
 

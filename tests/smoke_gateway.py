@@ -59,6 +59,11 @@ def send_modify(sock, oid, side, price, qty):
     )
     codec.send_message(sock, message_pb2.MODIFY_ORDER, msg)
 
+def test_risk_max_order(sock):
+    print("test max order size ")
+    send_add(sock, 10, message_pb2.BUY, message_pb2.GTC, 100, 99999)
+    expect_reject(sock)
+
 def test_match(sock):
     print("test_match")
     send_add(sock, 1, message_pb2.SELL, message_pb2.GTC, 100, 5)
@@ -103,6 +108,7 @@ def main():
         test_fok_reject(sock)
         test_bad_cancel(sock)
         test_modify(sock)
+        test_risk_max_order(sock    )
         print("all gateway smokes passed")
     finally:
         sock.close()

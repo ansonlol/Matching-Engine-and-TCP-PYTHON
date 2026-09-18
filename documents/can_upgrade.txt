@@ -1,0 +1,65 @@
+High-Priority Improvements (do these first)
+
+Strengthen Correctness & Edge Cases
+Order IDs: Currently the client supplies client_order_id. In a real system the exchange usually assigns its own ID and returns it. Consider mapping client_order_id → exchange_order_id or documenting the current choice clearly.
+Duplicate order IDs: You already reject if the ID exists — good. Make the reject reason clearer.
+Partial fills + remaining quantity tracking looks correct, but add tests for multi-level sweeps and residual FAK cancellation.
+Price/quantity validation: Reject non-positive prices/quantities, extremely large values, etc.
+Modify: Currently cancel + re-add. This loses time priority. Decide whether that’s acceptable and document it (many simple engines do this; production ones often preserve priority when possible).
+
+Better Reject Codes & Error Handling
+Right now many rejects are generic (“no liquidity or rejected”, “internal error”). Make them specific:
+DUPLICATE_ORDER_ID
+UNKNOWN_ORDER
+FOK_NOT_FILLABLE
+NO_LIQUIDITY
+INVALID_PRICE / INVALID_QUANTITY
+BAD_SIDE / BAD_ORDER_TYPE
+This is exactly the kind of thing they look for in system-design and code-quality discussions.
+Testing (biggest gap for “production-like”)
+Add proper unit tests for the OrderBook (pytest recommended).
+Cover: pure add, partial fill, full fill, FOK reject, FAK residual cancel, market order, multi-level match, cancel of resting order, modify.
+Make the multi-client test start the server as a subprocess (or use a fixture) so tests are deterministic and don’t require manual restarts.
+Add a test that checks book depth (get_order_infos) after a sequence of orders.
+
+Concurrency & Robustness
+The single matcher thread is good, but protect against exceptions more carefully (you already catch some — expand it).
+Consider graceful shutdown: drain queues, cancel GFD orders, close connections cleanly.
+Add a simple health / heartbeat message or at least log connection/disconnection events more clearly.
+
+
+Medium-Priority / Nice-to-Have (make it more “production-like”)
+
+Market data: Currently trades only go back to the active client. Add a simple broadcast mechanism (or a market-data subscription message) so other clients can see trades / book updates. This is a natural next step and shows system thinking.
+Persistence / recovery: Even a simple JSON dump of the book on shutdown + reload would be impressive (optional).
+Authentication / ownership: Right now any client can cancel any order. Add a simple client_id → set of owned orders check.
+Logging: Structured logging (with timestamps, client_id, order_id) instead of print statements.
+Configuration: Move port, max connections, etc. out of hard-coded values.
+Type hints & documentation: You already use some type hints — make them consistent and add short docstrings on the public methods of OrderBook and OrderService.
+Performance notes: In the README, briefly discuss why SortedDict + list is chosen vs alternatives (e.g. heap, skip list) and the Python performance ceiling. This is excellent interview material.
+
+Suggested Next Steps (prioritized for the week)
+
+Add a solid pytest suite for the pure matching engine (highest ROI).
+Improve reject reasons and validation.
+Clean up the README (fix a few typos, make the “how to run” section clearer, add a short “Design Decisions” section explaining why single matcher thread + CancelFairy).
+(Optional but impressive) Add a simple market-data publish path.
+Run the multi-client test repeatedly and fix any flakiness.
+
+Overall Verdict for Career Kickstarter
+This project is already better preparation than most candidates will have. It shows you understand:
+
+How real trading systems are layered
+TCP + Protobuf framing (exactly what they exercise)
+Clean OOP and separation of concerns
+Concurrency trade-offs in Python
+Matching engine fundamentals
+
+Focus the remaining time on correctness, testing, and clear communication of design decisions. That combination (working system + ability to explain trade-offs) is what they value most.
+Would you like me to:
+
+Suggest concrete unit-test cases?
+Review a specific file in more detail?
+Propose a cleaner modify implementation or market-data design?
+
+Just say the word and we can go deeper on any part. You’re in a strong position.
